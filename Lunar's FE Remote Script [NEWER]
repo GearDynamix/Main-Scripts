@@ -1,0 +1,363 @@
+
+-- Services
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Configuration
+local SOUND_ID = "rbxassetid://96867813755421"
+
+-- Put the exact paths of your own test remotes here.
+-- Example: "ReplicatedStorage.Remotes.TestEvent"
+local ALLOWED_TEST_REMOTES = {
+    -- ["ReplicatedStorage.Remotes.TestEvent"] = true,
+}
+
+-- Sound
+local clickSound = Instance.new("Sound")
+clickSound.SoundId = SOUND_ID
+clickSound.Volume = 1
+clickSound.Parent = PlayerGui
+
+-- Create Main UI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RemoteMonitor"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 400, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+Instance.new("UICorner", MainFrame).CornerRadius =
+    UDim.new(0, 8)
+
+-- Gradient
+local MainGradient = Instance.new("UIGradient")
+MainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(
+        0, Color3.fromRGB(50, 50, 50)
+    ),
+    ColorSequenceKeypoint.new(
+        1, Color3.fromRGB(25, 25, 25)
+    )
+})
+MainGradient.Rotation = 90
+MainGradient.Parent = MainFrame
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(0.5, 0, 0, 20)
+Title.Position = UDim2.new(0.5, -153, 0.5, -168)
+Title.Text = "FE REMOTE EVENT SCANNER BY Lunar"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.BackgroundTransparency = 1
+Title.Parent = MainFrame
+
+-- Search
+local SearchBar = Instance.new("TextBox")
+SearchBar.Name = "SearchBar"
+SearchBar.Size = UDim2.new(1, -10, 0, 30)
+SearchBar.Position = UDim2.new(0, 5, 0, 45)
+SearchBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+SearchBar.PlaceholderText = "Search remotes..."
+SearchBar.Text = ""
+SearchBar.TextColor3 = Color3.new(1, 1, 1)
+SearchBar.Font = Enum.Font.Gotham
+SearchBar.TextSize = 14
+SearchBar.ClearTextOnFocus = false
+SearchBar.Parent = MainFrame
+
+-- Scroll Frame
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Name = "RemoteList"
+ScrollFrame.Size = UDim2.new(1, -10, 1, -85)
+ScrollFrame.Position = UDim2.new(0, 5, 0, 80)
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollFrame.ScrollBarThickness = 6
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.Parent = MainFrame
+
+-- Close Button
+local Close80 = Instance.new("TextButton")
+Close80.Size = UDim2.new(0, 22, 0, 22)
+Close80.AnchorPoint = Vector2.new(1, 0)
+Close80.Position = UDim2.new(1, -5, 0, 5)
+Close80.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
+Close80.BackgroundTransparency = 0.7
+Close80.BorderSizePixel = 0
+Close80.Text = "X"
+Close80.TextScaled = true
+Close80.Font = Enum.Font.GothamBold
+Close80.TextColor3 = Color3.new(0, 0, 0)
+Close80.Parent = MainFrame
+
+Instance.new("UICorner", Close80).CornerRadius =
+    UDim.new(0, 8)
+
+Close80.MouseButton1Click:Connect(function()
+    clickSound:Play()
+    ScreenGui:Destroy()
+    clickSound:Destroy()
+end)
+
+-- Refresh Button
+local RefreshButton = Instance.new("TextButton")
+RefreshButton.Name = "RefreshButton"
+RefreshButton.Size = UDim2.new(0, 60, 0, 22)
+RefreshButton.AnchorPoint = Vector2.new(1, 0)
+RefreshButton.Position = UDim2.new(1, -32, 0, 5)
+RefreshButton.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
+RefreshButton.BackgroundTransparency = 0.7
+RefreshButton.BorderSizePixel = 0
+RefreshButton.Text = "Refresh"
+RefreshButton.TextScaled = true
+RefreshButton.Font = Enum.Font.GothamBold
+RefreshButton.TextColor3 = Color3.new(0, 0, 0)
+RefreshButton.Parent = MainFrame
+
+Instance.new("UICorner", RefreshButton).CornerRadius =
+    UDim.new(0, 8)
+
+-- Layout
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 5)
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Layout.Parent = ScrollFrame
+
+local Padding = Instance.new("UIPadding")
+Padding.PaddingTop = UDim.new(0, 5)
+Padding.PaddingLeft = UDim.new(0, 5)
+Padding.PaddingRight = UDim.new(0, 5)
+Padding.Parent = ScrollFrame
+
+local function updateCanvas()
+    ScrollFrame.CanvasSize = UDim2.new(
+        0, 0, 0, Layout.AbsoluteContentSize.Y + 10
+    )
+end
+
+Layout:GetPropertyChangedSignal(
+    "AbsoluteContentSize"
+):Connect(updateCanvas)
+
+-- Get a readable full path
+local function getFullPath(obj)
+    local segments = {}
+    local current = obj
+
+    while current and current ~= game do
+        table.insert(segments, 1, current.Name)
+        current = current.Parent
+    end
+
+    return "game." .. table.concat(segments, ".")
+end
+
+-- Track rows for searching and refreshes
+local remoteRows = {}
+local scanGeneration = 0
+
+-- Search logic
+local function applySearch()
+    local query = SearchBar.Text:lower()
+
+    for _, entry in ipairs(remoteRows) do
+        local matches =
+            string.find(entry.name:lower(), query, 1, true)
+            or string.find(entry.path:lower(), query, 1, true)
+
+        entry.row.Visible = matches ~= nil
+    end
+
+    updateCanvas()
+end
+
+-- Create remote row
+local function createRemoteRow(remote, order)
+    local fullPath = getFullPath(remote)
+
+    local Row = Instance.new("Frame")
+    Row.Name = "RemoteRow"
+    Row.LayoutOrder = order
+    Row.Size = UDim2.new(1, -10, 0, 50)
+    Row.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    Row.BorderSizePixel = 0
+    Row.Parent = ScrollFrame
+
+    Instance.new("UICorner", Row).CornerRadius =
+        UDim.new(0, 5)
+
+    local Icon = Instance.new("ImageLabel")
+    Icon.Size = UDim2.new(0, 30, 0, 30)
+    Icon.Position = UDim2.new(0, 5, 0.5, -15)
+    Icon.Image = "rbxassetid://4458901886"
+    Icon.BackgroundTransparency = 1
+    Icon.Parent = Row
+
+    local NameLabel = Instance.new("TextLabel")
+    NameLabel.Size = UDim2.new(1, -135, 0, 23)
+    NameLabel.Position = UDim2.new(0, 40, 0, 3)
+    NameLabel.Text = remote.Name
+    NameLabel.TextColor3 = Color3.new(1, 1, 1)
+    NameLabel.BackgroundTransparency = 1
+    NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    NameLabel.Font = Enum.Font.Gotham
+    NameLabel.TextSize = 14
+    NameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    NameLabel.Parent = Row
+
+    local PathLabel = Instance.new("TextLabel")
+    PathLabel.Size = UDim2.new(1, -135, 0, 18)
+    PathLabel.Position = UDim2.new(0, 40, 0, 26)
+    PathLabel.Text = fullPath
+    PathLabel.TextColor3 = Color3.fromRGB(175, 175, 175)
+    PathLabel.BackgroundTransparency = 1
+    PathLabel.TextXAlignment = Enum.TextXAlignment.Left
+    PathLabel.Font = Enum.Font.Code
+    PathLabel.TextSize = 9
+    PathLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    PathLabel.Parent = Row
+
+    local TestButton = Instance.new("TextButton")
+    TestButton.Size = UDim2.new(0, 80, 0, 25)
+    TestButton.Position = UDim2.new(1, -85, 0.5, -12)
+    TestButton.Text = "Inspect"
+    TestButton.BackgroundColor3 = Color3.fromRGB(65, 85, 65)
+    TestButton.TextColor3 = Color3.new(1, 1, 1)
+    TestButton.Font = Enum.Font.GothamBold
+    TestButton.TextSize = 12
+    TestButton.Parent = Row
+
+    Instance.new("UICorner", TestButton).CornerRadius =
+        UDim.new(0, 5)
+
+    TestButton.MouseButton1Click:Connect(function()
+        clickSound:Play()
+
+        print("----- Remote Details -----")
+        print("Name:", remote.Name)
+        print("Class:", remote.ClassName)
+        print("Path:", fullPath)
+        print("Parent:", remote.Parent:GetFullName())
+
+        if remote:IsA("RemoteEvent")
+            or remote:IsA("RemoteFunction") then
+
+            print("Remote reference is available to this client.")
+
+            -- Only explicitly allowlisted test remotes may be called.
+            if ALLOWED_TEST_REMOTES[fullPath] then
+                if remote:IsA("RemoteEvent") then
+                    remote:FireServer()
+                    print("Test event fired:", fullPath)
+                else
+                    print(
+                        "RemoteFunction is allowlisted, "
+                        .. "but invoke it through a dedicated "
+                        .. "test handler with known arguments."
+                    )
+                end
+            else
+                print(
+                    "Inspection only. Add this exact path to "
+                    .. "ALLOWED_TEST_REMOTES to enable its "
+                    .. "zero-argument test event."
+                )
+            end
+        end
+    end)
+
+    table.insert(remoteRows, {
+        row = Row,
+        name = remote.Name,
+        path = fullPath,
+        instance = remote,
+    })
+end
+
+-- Scan all descendants recursively
+local function refreshList()
+    scanGeneration += 1
+    local thisScan = scanGeneration
+
+    SearchBar.Text = ""
+
+    for _, child in ipairs(ScrollFrame:GetChildren()) do
+        if child:IsA("Frame") then
+            child:Destroy()
+        end
+    end
+
+    table.clear(remoteRows)
+
+    local remotes = {}
+
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj:IsA("RemoteEvent")
+            or obj:IsA("RemoteFunction") then
+
+            table.insert(remotes, obj)
+        end
+    end
+
+    table.sort(remotes, function(a, b)
+        return getFullPath(a):lower() < getFullPath(b):lower()
+    end)
+
+    for index, remote in ipairs(remotes) do
+        if scanGeneration ~= thisScan then
+            return
+        end
+
+        createRemoteRow(remote, index)
+    end
+
+    Title.Text = "FE REMOTE EVENT SCANNER BY Lunar"
+
+    print(
+        "[RemoteMonitor] Found "
+        .. #remotes
+        .. " replicated/visible remotes."
+    )
+
+    updateCanvas()
+    applySearch()
+end
+
+RefreshButton.MouseButton1Click:Connect(function()
+    clickSound:Play()
+    refreshList()
+end)
+
+SearchBar:GetPropertyChangedSignal("Text"):Connect(applySearch)
+
+-- Initial scan
+task.wait(1)
+refreshList()
+
+-- Track remotes added while the UI is open
+game.DescendantAdded:Connect(function(obj)
+    if obj:IsA("RemoteEvent")
+        or obj:IsA("RemoteFunction") then
+
+        task.delay(0.2, function()
+            if ScreenGui.Parent then
+                refreshList()
+            end
+        end)
+    end
+end)
