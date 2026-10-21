@@ -1,0 +1,1064 @@
+
+--========================================================
+-- COIN CFRAME MOVER + PERSISTENT NOCLIP + FLY
+-- Place in StarterPlayer > StarterPlayerScripts
+--========================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+--========================================================
+-- SETTINGS
+--========================================================
+
+local TARGET_NAME = "Coin_Server"
+
+local DEFAULT_SPEED = 28
+local MIN_SPEED = 1
+local MAX_SPEED = 250
+
+local ARRIVAL_DISTANCE = 0.5
+local TARGET_HEIGHT = 1
+local STAY_AT_PART = 0.12
+
+local FLY_SPEED = 50
+
+--========================================================
+-- STATE
+--========================================================
+
+local running = false
+local speed = DEFAULT_SPEED
+
+local currentTarget = nil
+local visitedTargets = {}
+local movementConnection = nil
+
+local searchTimer = 0
+local waitingUntil = 0
+local sessionId = 0
+local noTargetsLogged = false
+local logs = {}
+
+-- Noclip state
+local noclipEnabled = false
+local noclipStepConnection = nil
+local noclipDescendantConnection = nil
+local noclipCharacter = nil
+local originalCanCollide = {}
+
+-- Flight state
+local flyEnabled = false
+local flightUpdateConnection = nil
+local flightCharacter = nil
+local flightHumanoid = nil
+local flightVelocity = nil
+local flightGyro = nil
+local originalAutoRotate = nil
+local flightSetupId = 0
+local pendingFlightCharacter = nil
+
+--========================================================
+-- REMOVE OLD GUI
+--========================================================
+
+local oldGui = playerGui:FindFirstChild("CoinMoverPanel")
+
+if oldGui then
+    oldGui:Destroy()
+end
+
+--========================================================
+-- GUI CREATION
+--========================================================
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "CoinMoverPanel"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 10
+gui.Parent = playerGui
+
+local panel = Instance.new("Frame")
+panel.Name = "MainPanel"
+panel.Size = UDim2.fromOffset(420, 400)
+panel.Position = UDim2.new(0.5, -210, 0.5, -200)
+panel.BackgroundColor3 = Color3.fromRGB(20, 22, 31)
+panel.BorderSizePixel = 0
+panel.Parent = gui
+
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
+
+local outline = Instance.new("UIStroke")
+outline.Color = Color3.fromRGB(75, 115, 255)
+outline.Thickness = 1.5
+outline.Parent = panel
+
+local function makeLabel(parent, text, position, size)
+    local label = Instance.new("TextLabel")
+    label.Size = size
+    label.Position = position
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(225, 228, 240)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.TextWrapped = true
+    label.Parent = parent
+    return label
+end
+
+local function makeButton(parent, text, size, position, color)
+    local button = Instance.new("TextButton")
+    button.Size = size
+    button.Position = position
+    button.BackgroundColor3 = color
+    button.BorderSizePixel = 0
+    button.Text = text
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 13
+    button.AutoButtonColor = true
+    button.Parent = parent
+
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 6)
+    return button
+end
+
+-- Title
+local title = makeLabel(
+    panel,
+    "Automated CANDY FARM by elic4nt | (Turn Noclip & Fly ON)",
+    UDim2.fromOffset(14, 5),
+    UDim2.new(1, -65, 0, 35)
+)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 17
+
+-- Close button
+local closeButton = makeButton(
+    panel, "X",
+    UDim2.fromOffset(32, 28),
+    UDim2.new(1, -40, 0, 7),
+    Color3.fromRGB(170, 50, 60)
+)
+
+-- Tabs
+local mainTab = makeButton(
+    panel, "MAIN",
+    UDim2.fromOffset(190, 30),
+    UDim2.fromOffset(12, 42),
+    Color3.fromRGB(65, 95, 200)
+)
+
+local logTab = makeButton(
+    panel, "INFO LOG",
+    UDim2.fromOffset(190, 30),
+    UDim2.fromOffset(210, 42),
+    Color3.fromRGB(42, 45, 58)
+)
+
+-- Pages
+local mainPage = Instance.new("Frame")
+mainPage.Position = UDim2.fromOffset(12, 82)
+mainPage.Size = UDim2.new(1, -24, 1, -94)
+mainPage.BackgroundTransparency = 1
+mainPage.Parent = panel
+
+local logPage = Instance.new("Frame")
+logPage.Position = mainPage.Position
+logPage.Size = mainPage.Size
+logPage.BackgroundTransparency = 1
+logPage.Visible = false
+logPage.Parent = panel
+
+makeLabel(
+    mainPage,
+    "Target: Workspace descendants named Coin_Server",
+    UDim2.fromOffset(4, 4),
+    UDim2.new(1, -8, 0, 27)
+)
+
+makeLabel(
+    mainPage,
+    "CFrame speed (studs per second)",
+    UDim2.fromOffset(4, 32),
+    UDim2.new(1, -8, 0, 24)
+)
+
+-- Speed box
+local speedBox = Instance.new("TextBox")
+speedBox.Name = "SpeedBox"
+speedBox.Position = UDim2.fromOffset(4, 58)
+speedBox.Size = UDim2.fromOffset(100, 32)
+speedBox.BackgroundColor3 = Color3.fromRGB(38, 41, 54)
+speedBox.BorderSizePixel = 0
+speedBox.Text = tostring(DEFAULT_SPEED)
+speedBox.TextColor3 = Color3.new(1, 1, 1)
+speedBox.Font = Enum.Font.Gotham
+speedBox.TextSize = 14
+speedBox.ClearTextOnFocus = false
+speedBox.Parent = mainPage
+Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0, 5)
+
+local statusLabel = makeLabel(
+    mainPage,
+    "Status: Stopped",
+    UDim2.fromOffset(118, 59),
+    UDim2.new(1, -122, 0, 30)
+)
+statusLabel.TextColor3 = Color3.fromRGB(255, 190, 100)
+
+-- Start / Stop
+local startButton = makeButton(
+    mainPage, "START",
+    UDim2.fromOffset(190, 36),
+    UDim2.fromOffset(4, 100),
+    Color3.fromRGB(35, 155, 90)
+)
+
+local stopButton = makeButton(
+    mainPage, "STOP",
+    UDim2.fromOffset(190, 36),
+    UDim2.fromOffset(206, 100),
+    Color3.fromRGB(175, 50, 60)
+)
+
+local targetLabel = makeLabel(
+    mainPage,
+    "Current target: None",
+    UDim2.fromOffset(4, 140),
+    UDim2.new(1, -8, 0, 35)
+)
+targetLabel.TextColor3 = Color3.fromRGB(130, 180, 255)
+
+-- Noclip button
+local noclipButton = makeButton(
+    mainPage, "Noclip: OFF",
+    UDim2.new(1, -8, 0, 32),
+    UDim2.fromOffset(4, 180),
+    Color3.fromRGB(150, 55, 65)
+)
+
+-- Fly button
+local flyButton = makeButton(
+    mainPage, "Fly: OFF",
+    UDim2.new(1, -8, 0, 32),
+    UDim2.fromOffset(4, 218),
+    Color3.fromRGB(150, 55, 65)
+)
+
+makeLabel(
+    mainPage,
+    "Fly controls: WASD, Space up, Left Ctrl down",
+    UDim2.fromOffset(4, 254),
+    UDim2.new(1, -8, 0, 30)
+)
+
+--========================================================
+-- INFO LOG
+--========================================================
+
+local logScroll = Instance.new("ScrollingFrame")
+logScroll.Name = "LogScroll"
+logScroll.Size = UDim2.fromScale(1, 1)
+logScroll.BackgroundColor3 = Color3.fromRGB(13, 15, 22)
+logScroll.BorderSizePixel = 0
+logScroll.ScrollBarThickness = 5
+logScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+logScroll.CanvasSize = UDim2.fromOffset(0, 0)
+logScroll.Parent = logPage
+Instance.new("UICorner", logScroll).CornerRadius = UDim.new(0, 6)
+
+local logLayout = Instance.new("UIListLayout")
+logLayout.Padding = UDim.new(0, 4)
+logLayout.SortOrder = Enum.SortOrder.LayoutOrder
+logLayout.Parent = logScroll
+
+local logPadding = Instance.new("UIPadding")
+logPadding.PaddingTop = UDim.new(0, 7)
+logPadding.PaddingLeft = UDim.new(0, 7)
+logPadding.PaddingRight = UDim.new(0, 7)
+logPadding.Parent = logScroll
+
+local function addLog(message)
+    local entry = os.date("%H:%M:%S") .. " | " .. tostring(message)
+    table.insert(logs, entry)
+
+    while #logs > 80 do
+        table.remove(logs, 1)
+    end
+
+    for _, child in ipairs(logScroll:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+
+    for index, text in ipairs(logs) do
+        local label = Instance.new("TextLabel")
+        label.LayoutOrder = index
+        label.Size = UDim2.new(1, -5, 0, 25)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(180, 225, 190)
+        label.Font = Enum.Font.Code
+        label.TextSize = 12
+        label.TextWrapped = true
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = logScroll
+    end
+
+    print("[CoinMover] " .. entry)
+
+    task.defer(function()
+        if logScroll.Parent then
+            logScroll.CanvasPosition = Vector2.new(
+                0,
+                math.max(0, logScroll.AbsoluteCanvasSize.Y)
+            )
+        end
+    end)
+end
+
+--========================================================
+-- NOCLIP
+--========================================================
+
+local function setPartNoclip(part)
+    if not part:IsA("BasePart") then
+        return
+    end
+
+    if originalCanCollide[part] == nil then
+        originalCanCollide[part] = part.CanCollide
+    end
+
+    part.CanCollide = false
+end
+
+local function bindNoclipCharacter(character)
+    if noclipCharacter == character then
+        return
+    end
+
+    if noclipDescendantConnection then
+        noclipDescendantConnection:Disconnect()
+        noclipDescendantConnection = nil
+    end
+
+    noclipCharacter = character
+
+    if not character or not noclipEnabled then
+        return
+    end
+
+    for _, object in ipairs(character:GetDescendants()) do
+        setPartNoclip(object)
+    end
+
+    noclipDescendantConnection = character.DescendantAdded:Connect(function(object)
+        if noclipEnabled then
+            setPartNoclip(object)
+        end
+    end)
+end
+
+local function enableNoclip()
+    if noclipEnabled then
+        return
+    end
+
+    noclipEnabled = true
+    bindNoclipCharacter(player.Character)
+
+    noclipStepConnection = RunService.Stepped:Connect(function()
+        if not noclipEnabled then
+            return
+        end
+
+        local character = player.Character
+
+        if character ~= noclipCharacter then
+            bindNoclipCharacter(character)
+        end
+
+        if character then
+            for _, object in ipairs(character:GetDescendants()) do
+                setPartNoclip(object)
+            end
+        end
+    end)
+
+    noclipButton.Text = "Noclip: ON"
+    noclipButton.BackgroundColor3 = Color3.fromRGB(35, 155, 90)
+    addLog("Noclip enabled.")
+end
+
+local function disableNoclip()
+    if not noclipEnabled then
+        return
+    end
+
+    noclipEnabled = false
+
+    if noclipStepConnection then
+        noclipStepConnection:Disconnect()
+        noclipStepConnection = nil
+    end
+
+    if noclipDescendantConnection then
+        noclipDescendantConnection:Disconnect()
+        noclipDescendantConnection = nil
+    end
+
+    for part, originalValue in pairs(originalCanCollide) do
+        if part and part.Parent then
+            part.CanCollide = originalValue
+        end
+    end
+
+    table.clear(originalCanCollide)
+    noclipCharacter = nil
+
+    noclipButton.Text = "Noclip: OFF"
+    noclipButton.BackgroundColor3 = Color3.fromRGB(150, 55, 65)
+    addLog("Noclip disabled; collision settings restored.")
+end
+
+--========================================================
+-- FLIGHT
+--========================================================
+
+local function removeFlightRig()
+    if flightVelocity then
+        flightVelocity:Destroy()
+        flightVelocity = nil
+    end
+
+    if flightGyro then
+        flightGyro:Destroy()
+        flightGyro = nil
+    end
+
+    if flightHumanoid and flightHumanoid.Parent then
+        if originalAutoRotate ~= nil then
+            flightHumanoid.AutoRotate = originalAutoRotate
+        end
+
+        if flightHumanoid.Health > 0 then
+            flightHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end
+
+    flightHumanoid = nil
+    flightCharacter = nil
+    originalAutoRotate = nil
+end
+
+local function prepareFlightCharacter(character)
+    if not flyEnabled or not character then
+        return
+    end
+
+    -- Avoid restarting the same asynchronous setup every frame.
+    if pendingFlightCharacter == character or flightCharacter == character then
+        return
+    end
+
+    pendingFlightCharacter = character
+    flightSetupId += 1
+    local setupId = flightSetupId
+
+    task.spawn(function()
+        local root = character:WaitForChild("HumanoidRootPart", 10)
+        local humanoid = character:WaitForChild("Humanoid", 10)
+
+        if setupId ~= flightSetupId
+            or not flyEnabled
+            or player.Character ~= character
+            or not root
+            or not humanoid
+            or humanoid.Health <= 0 then
+
+            if pendingFlightCharacter == character then
+                pendingFlightCharacter = nil
+            end
+            return
+        end
+
+        removeFlightRig()
+
+        -- Revalidate after cleanup.
+        if not flyEnabled or player.Character ~= character then
+            pendingFlightCharacter = nil
+            return
+        end
+
+        flightCharacter = character
+        flightHumanoid = humanoid
+        originalAutoRotate = humanoid.AutoRotate
+        humanoid.AutoRotate = false
+
+        local velocity = Instance.new("BodyVelocity")
+        velocity.Name = "CoinMoverFlightVelocity"
+        velocity.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+        velocity.P = 1e4
+        velocity.Velocity = Vector3.zero
+        velocity.Parent = root
+        flightVelocity = velocity
+
+        local gyro = Instance.new("BodyGyro")
+        gyro.Name = "CoinMoverFlightGyro"
+        gyro.MaxTorque = Vector3.new(1e7, 1e7, 1e7)
+        gyro.P = 1e5
+        gyro.D = 1000
+        gyro.CFrame = root.CFrame
+        gyro.Parent = root
+        flightGyro = gyro
+
+        pendingFlightCharacter = nil
+        addLog("Flight ready for current character.")
+    end)
+end
+
+local function enableFlight()
+    if flyEnabled then
+        return
+    end
+
+    flyEnabled = true
+    prepareFlightCharacter(player.Character)
+
+    flightUpdateConnection = RunService.Heartbeat:Connect(function()
+        if not flyEnabled then
+            return
+        end
+
+        local character = player.Character
+        if not character then
+            return
+        end
+
+        if flightCharacter ~= character then
+            prepareFlightCharacter(character)
+            return
+        end
+
+        local humanoid = flightHumanoid
+        local velocity = flightVelocity
+        local gyro = flightGyro
+        local root = character:FindFirstChild("HumanoidRootPart")
+
+        if not humanoid or not velocity or not gyro or not root
+            or humanoid.Health <= 0 then
+            return
+        end
+
+        -- Allow automatic CFrame movement while flight remains ON.
+        -- Hold physics steady instead of competing for position.
+        if running then
+            velocity.Velocity = Vector3.zero
+            gyro.CFrame = root.CFrame
+            return
+        end
+
+        local camera = workspace.CurrentCamera
+        if not camera then
+            return
+        end
+
+        local look = camera.CFrame.LookVector
+        local right = camera.CFrame.RightVector
+
+        local forward = Vector3.new(look.X, 0, look.Z)
+        local rightFlat = Vector3.new(right.X, 0, right.Z)
+
+        if forward.Magnitude > 0 then
+            forward = forward.Unit
+        end
+
+        if rightFlat.Magnitude > 0 then
+            rightFlat = rightFlat.Unit
+        end
+
+        local forwardInput = 0
+        local sideInput = 0
+        local verticalInput = 0
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.W)
+            or UserInputService:IsKeyDown(Enum.KeyCode.Up) then
+            forwardInput += 1
+        end
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.S)
+            or UserInputService:IsKeyDown(Enum.KeyCode.Down) then
+            forwardInput -= 1
+        end
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.D)
+            or UserInputService:IsKeyDown(Enum.KeyCode.Right) then
+            sideInput += 1
+        end
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.A)
+            or UserInputService:IsKeyDown(Enum.KeyCode.Left) then
+            sideInput -= 1
+        end
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space)
+            or UserInputService:IsKeyDown(Enum.KeyCode.E) then
+            verticalInput += 1
+        end
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+            or UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+            verticalInput -= 1
+        end
+
+        local horizontal = forward * forwardInput
+            + rightFlat * sideInput
+
+        -- Touch users can use the normal Roblox movement thumbstick.
+        if UserInputService.TouchEnabled
+            and forwardInput == 0
+            and sideInput == 0 then
+
+            local moveDirection = humanoid.MoveDirection
+            horizontal = Vector3.new(
+                moveDirection.X,
+                0,
+                moveDirection.Z
+            )
+        end
+
+        if horizontal.Magnitude > 1 then
+            horizontal = horizontal.Unit
+        end
+
+        velocity.Velocity =
+            horizontal * FLY_SPEED
+            + Vector3.new(0, verticalInput * FLY_SPEED, 0)
+
+        if forward.Magnitude > 0 then
+            gyro.CFrame = CFrame.lookAt(
+                root.Position,
+                root.Position + forward
+            )
+        end
+    end)
+
+    flyButton.Text = "Fly: ON"
+    flyButton.BackgroundColor3 = Color3.fromRGB(35, 155, 90)
+    addLog("Flight enabled.")
+end
+
+local function disableFlight()
+    if not flyEnabled then
+        return
+    end
+
+    flyEnabled = false
+    flightSetupId += 1
+    pendingFlightCharacter = nil
+
+    if flightUpdateConnection then
+        flightUpdateConnection:Disconnect()
+        flightUpdateConnection = nil
+    end
+
+    removeFlightRig()
+
+    flyButton.Text = "Fly: OFF"
+    flyButton.BackgroundColor3 = Color3.fromRGB(150, 55, 65)
+    addLog("Flight disabled.")
+end
+
+local function toggleFlight()
+    if flyEnabled then
+        disableFlight()
+    else
+        enableFlight()
+    end
+end
+
+--========================================================
+-- COIN TARGET SEARCH
+--========================================================
+
+local function isValidTarget(object)
+    return object:IsA("BasePart")
+        and object.Name == TARGET_NAME
+        and object:IsDescendantOf(workspace)
+end
+
+local function getAllTargets()
+    local targets = {}
+
+    for _, object in ipairs(workspace:GetDescendants()) do
+        if isValidTarget(object) then
+            table.insert(targets, object)
+        end
+    end
+
+    return targets
+end
+
+local function findNextTarget(root)
+    local targets = getAllTargets()
+    local available = {}
+
+    for _, target in ipairs(targets) do
+        if not visitedTargets[target] then
+            table.insert(available, target)
+        end
+    end
+
+    if #available == 0 then
+        visitedTargets = {}
+
+        for _, target in ipairs(targets) do
+            table.insert(available, target)
+        end
+    end
+
+    if #available > 1 and currentTarget then
+        local filtered = {}
+
+        for _, target in ipairs(available) do
+            if target ~= currentTarget then
+                table.insert(filtered, target)
+            end
+        end
+
+        if #filtered > 0 then
+            available = filtered
+        end
+    end
+
+    table.sort(available, function(a, b)
+        return (a.Position - root.Position).Magnitude
+            < (b.Position - root.Position).Magnitude
+    end)
+
+    return available[1]
+end
+
+--========================================================
+-- STOP MOVEMENT
+--========================================================
+
+local function stopMovement(message)
+    running = false
+    sessionId += 1
+
+    currentTarget = nil
+    waitingUntil = 0
+    searchTimer = 0
+
+    if movementConnection then
+        movementConnection:Disconnect()
+        movementConnection = nil
+    end
+
+    statusLabel.Text = "Status: Stopped"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 190, 100)
+    targetLabel.Text = "Current target: None"
+
+    if message then
+        addLog(message)
+    end
+end
+
+--========================================================
+-- CONTINUOUS CFRAME MOVEMENT
+--========================================================
+
+local function startMovement()
+    if running then
+        addLog("Movement is already running.")
+        return
+    end
+
+    local requestedSpeed = tonumber(speedBox.Text)
+
+    if not requestedSpeed then
+        addLog("ERROR: Enter a valid numeric speed.")
+        return
+    end
+
+    speed = math.clamp(requestedSpeed, MIN_SPEED, MAX_SPEED)
+    speedBox.Text = tostring(speed)
+
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+    if not character or not humanoid or humanoid.Health <= 0 or not root then
+        addLog("Character is not ready yet.")
+        return
+    end
+
+    running = true
+    sessionId += 1
+    local thisSession = sessionId
+
+    currentTarget = nil
+    visitedTargets = {}
+    searchTimer = 1
+    waitingUntil = 0
+    noTargetsLogged = false
+
+    statusLabel.Text = "Status: Running"
+    statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+
+    addLog("CFrame movement started.")
+    addLog("Speed: " .. speed .. " studs/second.")
+    addLog("Stay time per coin: " .. STAY_AT_PART .. " seconds.")
+
+    movementConnection = RunService.Heartbeat:Connect(function(dt)
+        if not running or sessionId ~= thisSession then
+            return
+        end
+
+        character = player.Character
+        humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        root = character and character:FindFirstChild("HumanoidRootPart")
+
+        -- Keep running enabled through death/respawn.
+        if not character or not humanoid or not root
+            or humanoid.Health <= 0 then
+
+            statusLabel.Text = "Status: Waiting for respawn"
+            targetLabel.Text = "CFrame will resume after respawn."
+            return
+        end
+
+        if currentTarget and not isValidTarget(currentTarget) then
+            addLog("Target removed; selecting another.")
+            currentTarget = nil
+            waitingUntil = 0
+            searchTimer = 1
+        end
+
+        -- Pause between coins, not between respawns.
+        if not currentTarget and os.clock() < waitingUntil then
+            statusLabel.Text = string.format(
+                "Status: Waiting (%.1fs)",
+                math.max(0, waitingUntil - os.clock())
+            )
+            targetLabel.Text = "Waiting at previous coin..."
+            return
+        end
+
+        searchTimer += dt
+
+        if not currentTarget and searchTimer >= 0.1 then
+            searchTimer = 0
+            currentTarget = findNextTarget(root)
+
+            if currentTarget then
+                noTargetsLogged = false
+                targetLabel.Text =
+                    "Current target: " .. currentTarget:GetFullName()
+                statusLabel.Text = flyEnabled
+                    and "Status: Moving (Fly ON)"
+                    or "Status: Moving"
+            elseif not noTargetsLogged then
+                noTargetsLogged = true
+                statusLabel.Text = "Status: Waiting for parts"
+                addLog("No BaseParts named Coin_Server found in Workspace.")
+            end
+        end
+
+        if not currentTarget then
+            return
+        end
+
+        local destination = currentTarget.Position
+            + Vector3.new(
+                0,
+                currentTarget.Size.Y / 2 + TARGET_HEIGHT,
+                0
+            )
+
+        local offset = destination - root.Position
+        local distance = offset.Magnitude
+
+        if distance <= ARRIVAL_DISTANCE then
+            local reachedName = currentTarget:GetFullName()
+
+            visitedTargets[currentTarget] = true
+            currentTarget = nil
+            waitingUntil = os.clock() + STAY_AT_PART
+            searchTimer = 0
+
+            targetLabel.Text = "Waiting at coin..."
+            statusLabel.Text = string.format(
+                "Status: Waiting (%.2fs)",
+                STAY_AT_PART
+            )
+
+            addLog("Reached: " .. reachedName)
+            addLog("Waiting " .. STAY_AT_PART .. " seconds.")
+            return
+        end
+
+        local step = math.min(speed * dt, distance)
+        local nextPosition = root.Position + offset.Unit * step
+        local rotation = root.CFrame.Rotation
+
+        character:PivotTo(CFrame.new(nextPosition) * rotation)
+    end)
+end
+
+--========================================================
+-- RESPAWN SUPPORT
+--========================================================
+
+player.CharacterAdded:Connect(function(character)
+    addLog("Character spawned.")
+
+    task.defer(function()
+        if noclipEnabled then
+            bindNoclipCharacter(character)
+            addLog("Noclip reapplied after respawn.")
+        end
+
+        if flyEnabled then
+            prepareFlightCharacter(character)
+            addLog("Preparing flight for respawned character.")
+        end
+
+        if running then
+            statusLabel.Text = "Status: Resuming after respawn"
+        end
+    end)
+end)
+
+--========================================================
+-- BUTTON EVENTS
+--========================================================
+
+startButton.Activated:Connect(startMovement)
+
+stopButton.Activated:Connect(function()
+    stopMovement("CFrame movement stopped by user.")
+end)
+
+noclipButton.Activated:Connect(function()
+    if noclipEnabled then
+        disableNoclip()
+    else
+        enableNoclip()
+    end
+end)
+
+flyButton.Activated:Connect(toggleFlight)
+
+speedBox.FocusLost:Connect(function()
+    local value = tonumber(speedBox.Text)
+
+    if not value then
+        speedBox.Text = tostring(speed)
+        addLog("Invalid speed; previous setting retained.")
+        return
+    end
+
+    speed = math.clamp(value, MIN_SPEED, MAX_SPEED)
+    speedBox.Text = tostring(speed)
+    addLog("Speed set to " .. speed .. " studs/second.")
+end)
+
+mainTab.Activated:Connect(function()
+    mainPage.Visible = true
+    logPage.Visible = false
+
+    mainTab.BackgroundColor3 = Color3.fromRGB(65, 95, 200)
+    logTab.BackgroundColor3 = Color3.fromRGB(42, 45, 58)
+end)
+
+logTab.Activated:Connect(function()
+    mainPage.Visible = false
+    logPage.Visible = true
+
+    mainTab.BackgroundColor3 = Color3.fromRGB(42, 45, 58)
+    logTab.BackgroundColor3 = Color3.fromRGB(65, 95, 200)
+end)
+
+closeButton.Activated:Connect(function()
+    stopMovement("Panel closed.")
+
+    if noclipEnabled then
+        disableNoclip()
+    end
+
+    if flyEnabled then
+        disableFlight()
+    end
+
+    gui:Destroy()
+end)
+
+--========================================================
+-- DRAGGABLE PANEL
+--========================================================
+
+local dragging = false
+local dragStart
+local startPosition
+
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = true
+        dragStart = input.Position
+        startPosition = panel.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
+        local delta = input.Position - dragStart
+
+        panel.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+--========================================================
+-- INITIALIZATION
+--========================================================
+
+addLog("Coin CFrame Mover initialized.")
+addLog("Target: Coin_Server")
+addLog("Speed: " .. DEFAULT_SPEED .. " studs/second.")
+addLog("Stay duration: " .. STAY_AT_PART .. " seconds.")
+addLog("Noclip: OFF | Fly: OFF")
+addLog("Press START to begin.")
