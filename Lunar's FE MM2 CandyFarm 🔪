@@ -1,8 +1,4 @@
-
---========================================================
--- COIN CFRAME MOVER + PERSISTENT NOCLIP + FLY
--- Place in StarterPlayer > StarterPlayerScripts
---========================================================
+Made With My Own AI Assistant And My Own Lua Knowledge!
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
