@@ -1,0 +1,99 @@
+
+
+local Players = game:GetService("Players")
+
+local UPDATE_INTERVAL = 0.1
+
+local TOOL_SETTINGS = {
+    ["Knife"] = {
+        HighlightName = "KnifeHighlight",
+        Color = Color3.fromRGB(255, 0, 0), -- Red
+    },
+
+    ["Gun"] = {
+        HighlightName = "GunHighlight",
+        Color = Color3.fromRGB(0, 100, 255), -- Blue
+    },
+}
+
+local function hasTool(player, toolName)
+    local backpack = player:FindFirstChildOfClass("Backpack")
+    local character = player.Character
+
+    -- Check Backpack, even if the tool is unequipped
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") and item.Name == toolName then
+                return true
+            end
+        end
+    end
+
+    -- Check equipped tools inside the Character
+    if character then
+        for _, item in ipairs(character:GetChildren()) do
+            if item:IsA("Tool") and item.Name == toolName then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function updateHighlight(character, setting)
+    if not character then
+        return
+    end
+
+    local highlight = character:FindFirstChild(setting.HighlightName)
+
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = setting.HighlightName
+        highlight.Parent = character
+    end
+
+    highlight.Adornee = character
+    highlight.FillColor = setting.Color
+    highlight.OutlineColor = setting.Color
+    highlight.FillTransparency = 0.45
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function removeHighlight(character, highlightName)
+    if not character then
+        return
+    end
+
+    local highlight = character:FindFirstChild(highlightName)
+
+    if highlight and highlight:IsA("Highlight") then
+        highlight:Destroy()
+    end
+end
+
+local function updatePlayer(player)
+    local character = player.Character
+    if not character then
+        return
+    end
+
+    for toolName, setting in pairs(TOOL_SETTINGS) do
+        if hasTool(player, toolName) then
+            updateHighlight(character, setting)
+        else
+            removeHighlight(character, setting.HighlightName)
+        end
+    end
+end
+
+-- Continuously update all players, including newly joined players
+while true do
+    for _, player in ipairs(Players:GetPlayers()) do
+        updatePlayer(player)
+    end
+
+    task.wait(UPDATE_INTERVAL)
+end
