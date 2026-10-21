@@ -1,4 +1,4 @@
-Made With My Own AI Assistant And My Own Lua Knowledge!
+-- Made With My Own AI Assistant And My Own Lua Knowledge!
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
