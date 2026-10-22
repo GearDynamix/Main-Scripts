@@ -13,16 +13,6 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 local TARGET_NAME = "Coin_Server"
 
-local DEFAULT_SPEED = 27.5
-local MIN_SPEED = 1
-local MAX_SPEED = 250
-
-local ARRIVAL_DISTANCE = 0.5
-local TARGET_HEIGHT = 1
-local STAY_AT_PART = 0
-
-local FLY_SPEED = 50
-
 --========================================================
 -- STATE
 --========================================================
