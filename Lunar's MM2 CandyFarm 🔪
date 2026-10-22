@@ -11,7 +11,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- SETTINGS
 --========================================================
 
-local DEFAULT_SPEED = 27
+local DEFAULT_SPEED = 26
 local MIN_SPEED = 1
 local MAX_SPEED = 250
 
