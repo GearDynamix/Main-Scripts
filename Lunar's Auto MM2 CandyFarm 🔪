@@ -1,4 +1,4 @@
--- Made With My Own AI Assistant And My Own Lua Knowledge!
+-- CANDY AUTO FARM SCRIPT | MADE BY EliC4Nt On ROBLOX! --
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
