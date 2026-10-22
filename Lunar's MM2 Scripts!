@@ -1,0 +1,7 @@
+-- CANDY AUTO FARM SCRIPT | MADE BY EliC4Nt On ROBLOX! --
+loadstring(game:HttpGet("https://raw.githubusercontent.com/GearDynamix/Main-Scripts/refs/heads/main/Lunar's%20Auto%20MM2%20CandyFarm%20%F0%9F%94%AA"))()
+
+wait(3)
+
+-- MURDERER AND SHERIFF HIGHLIGHT SCRIPT | MADE BY EliC4Nt On ROBLOX! --
+loadstring(game:HttpGet("https://raw.githubusercontent.com/GearDynamix/Main-Scripts/refs/heads/main/Lunar's%20MM2%20Murd%20%5C%20Sheriff%20Highligher"))()
