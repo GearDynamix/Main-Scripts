@@ -19,7 +19,7 @@ local ARRIVAL_DISTANCE = 0.5
 local TARGET_HEIGHT = 1
 local STAY_AT_PART = 0
 
-local FLY_SPEED = 27
+local FLY_SPEED = 26
 
 local TARGET_NAME = "Coin_Server"
 
