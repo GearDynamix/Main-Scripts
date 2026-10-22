@@ -1,0 +1,68 @@
+
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+
+local CHECK_INTERVAL = 0.1
+local REQUIRED_COINS = "50"
+
+local coinsLabel
+
+local function setupCoinsLabel()
+	local playerGui = player:WaitForChild("PlayerGui")
+
+	coinsLabel = playerGui
+		:WaitForChild("MainGUI")
+		:WaitForChild("Game")
+		:WaitForChild("CoinBags")
+		:WaitForChild("Container")
+		:WaitForChild("Candy")
+		:WaitForChild("CurrencyFrame")
+		:WaitForChild("Icon")
+		:WaitForChild("Coins")
+end
+
+local function checkReset()
+	if not coinsLabel or coinsLabel.Text ~= REQUIRED_COINS then
+		return
+	end
+
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then
+		return
+	end
+
+	local hasGun = backpack:FindFirstChild("Gun") ~= nil
+	local hasKnife = backpack:FindFirstChild("Knife") ~= nil
+
+	if not hasGun and not hasKnife then
+		return
+	end
+
+	local character = player.Character
+	local humanoid = character
+		and character:FindFirstChildOfClass("Humanoid")
+
+	if humanoid and humanoid.Health > 0 then
+		humanoid.Health = 0
+	end
+end
+
+-- Keep running through deaths and respawns
+task.spawn(function()
+	while true do
+		local success, err = pcall(function()
+			if not coinsLabel or not coinsLabel.Parent then
+				setupCoinsLabel()
+			end
+
+			checkReset()
+		end)
+
+		if not success then
+			warn("[AutoReset] Error:", err)
+		end
+
+		task.wait(CHECK_INTERVAL)
+	end
+end)
